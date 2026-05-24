@@ -82,3 +82,24 @@ elif rsi < 40: st.info(f"2단계 (매수): 저평가 구간입니다. (RSI: {rsi
 elif rsi < 60: st.info(f"3단계 (관망): 박스권 구간입니다. (RSI: {rsi:.1f})")
 elif rsi < 80: st.info(f"4단계 (매도): 과열 구간입니다. (RSI: {rsi:.1f})")
 else: st.warning(f"5단계 (강력매도): 버블 구간입니다! (RSI: {rsi:.1f})")
+# ... (상단 코드 동일) ...
+
+# 4. 분석 엔진 및 차트 (기존 내용)
+code = stock_list[stock_list['Name'] == search]['Code'].values[0]
+df = fdr.DataReader(code, '2022-01-01')
+
+# 등락폭 계산 로직 추가
+current_price = df['Close'].iloc[-1]
+prev_price = df['Close'].iloc[-2]
+change_val = current_price - prev_price
+change_pct = (change_val / prev_price) * 100
+
+# 시세와 등락폭 출력
+st.subheader(f"📊 {search} 상세 시세")
+col_a, col_b, col_c = st.columns(3)
+col_a.metric("현재가", f"{int(current_price):,}원")
+col_b.metric("등락폭", f"{int(change_val):,}원", f"{change_pct:.2f}%")
+col_c.metric("거래량", f"{df['Volume'].iloc[-1]:,}")
+
+# 차트 및 AI 진단 (아래는 기존과 동일)
+# ...
