@@ -1,6 +1,5 @@
-Plaintext
 streamlit
 yfinance
 pandas
 pandas-ta-classic
-finance-datareader
+finance-datareader>=0.9.5
