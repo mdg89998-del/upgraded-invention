@@ -1,4 +1,6 @@
+Plaintext
 streamlit
 yfinance
 pandas
 pandas-ta-classic
+finance-datareader
