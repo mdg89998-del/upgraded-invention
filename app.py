@@ -59,3 +59,29 @@ with st.spinner("🔄 분석 중..."):
             continue
 
 st.success("✅ 완료! 종목 카드를 누르면 차트가 정상적으로 열립니다.")
+import streamlit as st
+import yfinance as yf
+import FinanceDataReader as fdr
+
+st.title("📈 나만의 주식 검색 전광판")
+
+# 1. 코스피/코스닥 종목 리스트 가져오기 (매번 가져오지 않도록 캐싱 사용)
+@st.cache_data
+def get_stock_list():
+    df_krx = fdr.StockListing('KRX')
+    return df_krx[['Code', 'Name']]
+
+stock_list = get_stock_list()
+
+# 2. 검색창 만들기 (종목명으로 검색)
+search_query = st.selectbox("종목명을 검색하세요:", stock_list['Name'])
+
+# 선택한 종목의 코드 찾기
+ticker_code = stock_list[stock_list['Name'] == search_query]['Code'].values[0]
+# 야후 파이낸스용 티커 변환 (코스피/코스닥에 따라 .KS 또는 .KQ 붙임)
+# (이 부분은 종목 코드 뒤에 .KS나 .KQ를 붙여야 정확히 검색됩니다)
+
+st.write(f"선택하신 종목: {search_query} ({ticker_code})")
+
+# 3. 데이터 불러오기 및 시각화 (기존 코드 유지)
+# 여기에 기존에 쓰시던 yfinance 데이터 불러오기 코드를 연결하세요!
