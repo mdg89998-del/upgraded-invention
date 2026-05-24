@@ -2,58 +2,43 @@ import streamlit as st
 import pandas as pd
 import pandas_ta_classic as ta
 import FinanceDataReader as fdr
+import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-st.set_page_config(page_title="AI PRO ANALYZER", layout="wide")
-st.title("🤖 AI 프로 자산 분석기")
+st.set_page_config(page_title="AI MARKET BOARD", layout="wide")
+st.title("🤖 AI 시장 위험 분석기")
 
-# 1. 종목 검색 및 기간/주기 설정
+# 1. 시장 데이터 수집 함수
 @st.cache_data
-def get_stock_list():
-    return fdr.StockListing('KRX')[['Code', 'Name']]
+def get_market_data():
+    # 나스닥 100(NDX), 코스피(KS11), 코스닥(KQ11), VIX(^VIX)
+    tickers = {"나스닥100": "^NDX", "코스피": "KS11", "코스닥": "KQ11", "VIX지수": "^VIX"}
+    data = {}
+    for name, ticker in tickers.items():
+        df = yf.Ticker(ticker).history(period="1mo")
+        data[name] = df['Close'].iloc[-1]
+    return data
 
-stock_list = get_stock_list()
-col1, col2, col3 = st.columns([2, 1, 1])
-with col1: search = st.selectbox("종목 검색", stock_list['Name'])
-with col2: period = st.selectbox("기간", ["1y", "3y", "5y"])
-with col3: interval = st.selectbox("주기", ["일봉", "주봉", "월봉"])
+# 2. 시장 위험도 분석 로직 (3단계)
+def analyze_risk(vix_val):
+    if vix_val < 20: return "🟢 양호", "변동성이 낮아 시장이 안정적입니다."
+    elif vix_val < 30: return "🟡 경계", "변동성이 커지고 있어 리스크 관리가 필요합니다."
+    else: return "🔴 위험", "시장에 공포가 확산되는 구간입니다. 현금 확보를 권장합니다."
 
-code = stock_list[stock_list['Name'] == search]['Code'].values[0]
-interval_map = {"일봉": "1d", "주봉": "1w", "월봉": "1m"}
+# 3. 시장 현황판 구성
+market_data = get_market_data()
+vix = market_data["VIX지수"]
+status, desc = analyze_risk(vix)
 
-# 데이터 로드
-df = fdr.DataReader(code, '2020-01-01') # 더 길게 가져오기
-# 주봉/월봉 변환 로직 생략(간소화)
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("나스닥 100", f"{market_data['나스닥100']:,.0f}")
+col2.metric("코스피", f"{market_data['코스피']:,.0f}")
+col3.metric("코스닥", f"{market_data['코스닥']:,.0f}")
+col4.metric("VIX 지수", f"{vix:.2f}", status)
 
-# 2. AI 지표 계산 (이동평균선 & RSI)
-for i in [5, 20, 60, 120]:
-    df[f'MA{i}'] = ta.ema(df['Close'], length=i)
-df['RSI'] = ta.rsi(df['Close'], length=14)
+st.subheader(f"📊 AI 종합 시장 진단: {status}")
+st.write(f"**AI 알고리즘 분석:** {desc}")
 
-# 3. 차트 시각화 (거래량 포함)
-fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
-fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='시세'), row=1, col=1)
-for i in [5, 20, 60, 120]:
-    fig.add_trace(go.Scatter(x=df.index, y=df[f'MA{i}'], name=f'MA{i}'), row=1, col=1)
-fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='거래량'), row=2, col=1)
-st.plotly_chart(fig, use_container_width=True)
-
-# 4. AI 진단 로직 (5단계)
-rsi = df['RSI'].iloc[-1]
-def get_ai_signal(rsi):
-    if rsi < 20: return "🔥 1단계: 강력매수 (극단적 저평가)", "과매도 구간으로 반등 가능성이 매우 높습니다."
-    if rsi < 40: return "🟢 2단계: 매수 (저평가)", "상승 추세로 전환될 가능성이 있는 구간입니다."
-    if rsi < 60: return "🔵 3단계: 관망", "현재 균형 잡힌 구간입니다."
-    if rsi < 80: return "🔴 4단계: 매도 (과열)", "매수세가 강해 차익 실현을 고민해야 합니다."
-    return "⚡ 5단계: 강력매도 (버블)", "과열 구간으로 조정 가능성이 매우 높습니다."
-
-sig, reason = get_ai_signal(rsi)
-st.write(f"### 🧠 AI 분석 결과: {sig}")
-st.info(reason)
-
-# 5. 수급 섹터 (간략화된 버전)
 st.write("---")
-st.write("### 📈 수급 현황 (섹터 모멘텀)")
-# 실제로는 섹터 데이터 API가 필요하지만 여기서는 예시 코드를 제공합니다.
-st.bar_chart(pd.DataFrame({'수급': [100, 85, 70, 50, 40]}, index=['반도체', '이차전지', '조선', '자동차', '금융']))
+# (기존 종목 검색 및 AI 분석 기능은 아래에 그대로 이어서 붙이시면 됩니다.)
