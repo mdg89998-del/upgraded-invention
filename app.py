@@ -117,3 +117,8 @@ if not data.empty:
     st.line_chart(data['Close'])
 else:
     st.error("데이터를 불러올 수 없습니다. 코드 형식을 확인하세요.")
+# 수정 전
+search_query = st.selectbox("종목명을 검색하세요:", stock_list['Name'])
+
+# 수정 후 (아래처럼 key="stock_search_selectbox"를 추가하세요)
+search_query = st.selectbox("종목명을 검색하세요:", stock_list['Name'], key="stock_search_selectbox")
