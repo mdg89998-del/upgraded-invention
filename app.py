@@ -84,4 +84,36 @@ ticker_code = stock_list[stock_list['Name'] == search_query]['Code'].values[0]
 st.write(f"선택하신 종목: {search_query} ({ticker_code})")
 
 # 3. 데이터 불러오기 및 시각화 (기존 코드 유지)
-# 여기에 기존에 쓰시던 yfinance 데이터 불러오기 코드를 연결하세요!
+# 여기에 기존에 쓰시던 yfinance 데이터 불러오기 코드를 연결하세요!import streamlit as st
+import yfinance as yf
+import FinanceDataReader as fdr
+
+st.title("📈 나만의 주식 검색 전광판")
+
+@st.cache_data
+def get_stock_list():
+    df_krx = fdr.StockListing('KRX')
+    return df_krx[['Code', 'Name', 'Market']] # 'Market' 정보 추가
+
+stock_list = get_stock_list()
+
+search_query = st.selectbox("종목명을 검색하세요:", stock_list['Name'])
+
+# 선택한 종목의 코드와 시장 정보 가져오기
+selected_row = stock_list[stock_list['Name'] == search_query].iloc[0]
+ticker_code = selected_row['Code']
+market = selected_row['Market']
+
+# 야후 파이낸스 티커 형식으로 변환 (KOSPI는 .KS, KOSDAQ은 .KQ)
+suffix = ".KS" if market == 'KOSPI' else ".KQ"
+ticker = f"{ticker_code}{suffix}"
+
+st.write(f"선택하신 종목: {search_query} ({ticker})")
+
+# 데이터 불러오기
+data = yf.download(ticker, period='1mo') # 최근 1개월 데이터
+
+if not data.empty:
+    st.line_chart(data['Close'])
+else:
+    st.error("데이터를 불러올 수 없습니다. 코드 형식을 확인하세요.")
