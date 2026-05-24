@@ -1,5 +1,6 @@
 streamlit
-yfinance
 pandas
 pandas-ta-classic
-finance-datareader>=0.9.5
+yfinance
+finance-datareader
+plotly
