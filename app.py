@@ -102,4 +102,51 @@ col_b.metric("등락폭", f"{int(change_val):,}원", f"{change_pct:.2f}%")
 col_c.metric("거래량", f"{df['Volume'].iloc[-1]:,}")
 
 # 차트 및 AI 진단 (아래는 기존과 동일)
-# ...
+import streamlit as st
+import pandas as pd
+import pandas_ta_classic as ta
+import FinanceDataReader as fdr
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from datetime import datetime, timedelta
+
+st.set_page_config(page_title="AI PRO", layout="wide")
+
+# 1. 데이터 로드 (에러 방지용)
+@st.cache_data(ttl=3600)
+def get_stock_list():
+    try:
+        df = fdr.StockListing('KRX')
+        # 이름과 코드를 확실하게 매핑하기 위해 공백 제거
+        df['Name_Clean'] = df['Name'].str.replace(" ", "").str.lower()
+        return df[['Code', 'Name', 'Name_Clean']]
+    except:
+        return pd.DataFrame({'Code': ['005930'], 'Name': ['삼성전자'], 'Name_Clean': ['삼성전자']})
+
+stock_list = get_stock_list()
+
+# 2. 사이드바 (모바일에서는 접혀있어 편리합니다)
+with st.sidebar:
+    st.subheader("종목 선택")
+    # 사용자가 입력한 검색어
+    query = st.text_input("종목명 입력 (예: 삼성전자)")
+    
+    # 검색어에 맞는 종목 필터링
+    filtered_list = stock_list[stock_list['Name'].str.contains(query, na=False)] if query else stock_list
+    
+    search = st.selectbox("검색 결과 선택", filtered_list['Name'])
+    
+    if st.button("분석 실행"):
+        st.session_state.selected_stock = search
+
+# 3. 분석 로직
+if 'selected_stock' in st.session_state:
+    target_name = st.session_state.selected_stock
+    target_row = stock_list[stock_list['Name'] == target_name].iloc[0]
+    code = target_row['Code']
+    
+    # 데이터 불러오기
+    df = fdr.DataReader(code, '2022-01-01')
+    
+    # ... (지표 계산 및 차트 부분은 동일) ...
+    st.success(f"{target_name} 분석 완료")
