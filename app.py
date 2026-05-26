@@ -5,41 +5,48 @@ import FinanceDataReader as fdr
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# 1. 캐싱된 리스트 로드
+# 1. 데이터 로드 및 주기 변환 함수
 @st.cache_data
-def get_stock_list():
-    try: return fdr.StockListing('KRX')[['Code', 'Name']]
-    except: return pd.DataFrame({'Code': ['005930'], 'Name': ['삼성전자']})
+def get_data(code, interval):
+    df = fdr.DataReader(code, '2022-01-01')
+    if interval == '주봉': df = df.resample('W').agg({'Open':'first', 'High':'max', 'Low':'min', 'Close':'last', 'Volume':'sum'})
+    elif interval == '월봉': df = df.resample('M').agg({'Open':'first', 'High':'max', 'Low':'min', 'Close':'last', 'Volume':'sum'})
+    return df
 
-# 전체 구조를 함수화하여 UI 요소가 중복 생성되는 것 방지
 def main():
-    st.set_page_config(page_title="AI PRO", layout="wide")
-    stock_list = get_stock_list()
+    st.set_page_config(page_title="AI PRO CHART", layout="wide")
+    stock_list = fdr.StockListing('KRX')[['Code', 'Name']]
 
-    # 2. 사이드바
     with st.sidebar:
-        st.title("🔍 종목 찾기")
-        query = st.text_input("종목명 입력")
-        
-        # 검색 리스트 생성
+        query = st.text_input("종목 검색")
         filtered = stock_list[stock_list['Name'].str.contains(query, na=False)] if query else stock_list
-        selected = st.selectbox("검색 결과", filtered['Name'], key="stock_selector")
-        
+        selected = st.selectbox("검색 결과", filtered['Name'], key="selector")
+        interval = st.radio("차트 주기", ["일봉", "주봉", "월봉"], horizontal=True)
         submit = st.button("분석 실행")
 
-    # 3. 메인 분석 (사이드바 버튼과 무관하게 선택된 종목으로 자동 업데이트)
-    st.title(f"📈 {selected} 분석")
+    st.title(f"📈 {selected} ({interval})")
     
     code = stock_list[stock_list['Name'] == selected]['Code'].values[0]
-    df = fdr.DataReader(code, '2022-01-01')
+    df = get_data(code, interval)
 
-    # 지표 계산
-    for i in [5, 20, 60, 120]: df[f'MA{i}'] = ta.ema(df['Close'], length=i)
+    # 이평선 추가 (5, 20, 40, 60일)
+    for i in [5, 20, 40, 60]: df[f'MA{i}'] = df['Close'].rolling(window=i).mean()
+
+    # 2. 전문 캔들차트 구현 (Plotly)
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.05)
     
-    # 차트
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3])
-    fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close']), row=1, col=1)
-    fig.add_trace(go.Bar(x=df.index, y=df['Volume']), row=2, col=1)
+    # 캔들스틱
+    fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='시세'), row=1, col=1)
+    
+    # 이평선 (5, 20, 40, 60)
+    colors = ['orange', 'blue', 'green', 'red']
+    for i, ma in enumerate([5, 20, 40, 60]):
+        fig.add_trace(go.Scatter(x=df.index, y=df[f'MA{ma}'], name=f'MA{ma}', line=dict(width=1.5)), row=1, col=1)
+        
+    # 거래량
+    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='거래량', marker_color='gray'), row=2, col=1)
+
+    fig.update_layout(xaxis_rangeslider_visible=False, height=600, template="plotly_white")
     st.plotly_chart(fig, use_container_width=True)
 
 if __name__ == '__main__':
