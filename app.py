@@ -66,4 +66,35 @@ def main():
         st.error("종목 데이터를 불러오지 못했습니다.")
 
 if __name__ == '__main__':
-    main()
+    main()# [추가] 1. 상세 지표 계산 및 전일 대비 로직
+        curr = df['Close'].iloc[-1]
+        prev = df['Close'].iloc[-2]
+        vol_curr = df['Volume'].iloc[-1]
+        vol_prev = df['Volume'].iloc[-2]
+        
+        price_diff = ((curr - prev) / prev) * 100
+        vol_diff = ((vol_curr - vol_prev) / vol_prev) * 100
+        
+        # [추가] 2. 상세 정보 출력 (4개 컬럼)
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("현재가", f"{int(curr):,}원", f"{price_diff:+.2f}%")
+        c2.metric("거래량", f"{int(vol_curr):,}", f"{vol_diff:+.1f}% 전일비")
+        c3.metric("시가", f"{int(df['Open'].iloc[-1]):,}원")
+        c4.metric("고가", f"{int(df['High'].iloc[-1]):,}원")
+
+        # [추가] 3. 분석 로직 (골든크로스 & RSI 복합 필터링)
+        golden = (df['MA5'].iloc[-2] < df['MA20'].iloc[-2]) and (df['MA5'].iloc[-1] > df['MA20'].iloc[-1])
+        
+        signal, color, desc = "관망", "gray", "특별한 신호가 없습니다."
+        if golden and rsi < 70: 
+            signal, color, desc = "강력 매수", "green", "골든크로스 발생! 상승 추세입니다."
+        elif rsi > 75: 
+            signal, color, desc = "매도", "red", "과열 상태입니다. 차익 실현 고려하세요."
+        elif golden: 
+            signal, color, desc = "매수", "blue", "골든크로스 발생했으나 과열 주의하세요."
+        elif rsi < 30: 
+            signal, color, desc = "저점 매수", "orange", "과매도 구간입니다. 반등을 노리세요."
+
+        # [추가] 4. 결과 출력
+        st.markdown(f"### 🎯 시그널: <span style='color:{color}'>{signal}</span>", unsafe_allow_html=True)
+        st.info(f"AI 복합 진단: {desc} (RSI: {rsi:.1f})")
