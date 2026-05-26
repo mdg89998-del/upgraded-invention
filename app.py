@@ -1,16 +1,22 @@
 import streamlit as st
 import pandas as pd
-import pandas_ta_classic as ta
 import FinanceDataReader as fdr
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# 1. 데이터 로드 및 주기 변환 함수
+# 1. 데이터 로드 및 주기 변환 (안전 처리)
 @st.cache_data
 def get_data(code, interval):
-    df = fdr.DataReader(code, '2022-01-01')
-    if interval == '주봉': df = df.resample('W').agg({'Open':'first', 'High':'max', 'Low':'min', 'Close':'last', 'Volume':'sum'})
-    elif interval == '월봉': df = df.resample('M').agg({'Open':'first', 'High':'max', 'Low':'min', 'Close':'last', 'Volume':'sum'})
+    df = fdr.DataReader(code, '2020-01-01') # 충분한 데이터를 위해 기간 확장
+    if df.empty: return df
+    
+    if interval == '주봉':
+        df = df.resample('W').agg({'Open':'first', 'High':'max', 'Low':'min', 'Close':'last', 'Volume':'sum'})
+    elif interval == '월봉':
+        df = df.resample('ME').agg({'Open':'first', 'High':'max', 'Low':'min', 'Close':'last', 'Volume':'sum'})
+    
+    # 비어있는 행 제거
+    df = df.dropna()
     return df
 
 def main():
@@ -24,23 +30,25 @@ def main():
         interval = st.radio("차트 주기", ["일봉", "주봉", "월봉"], horizontal=True)
         submit = st.button("분석 실행")
 
-    st.title(f"📈 {selected} ({interval})")
-    
     code = stock_list[stock_list['Name'] == selected]['Code'].values[0]
     df = get_data(code, interval)
 
-    # 이평선 추가 (5, 20, 40, 60일)
+    if df.empty:
+        st.error("해당 기간의 데이터를 불러올 수 없습니다.")
+        return
+
+    st.title(f"📈 {selected} ({interval})")
+
+    # 이평선 추가 (5, 20, 40, 60)
     for i in [5, 20, 40, 60]: df[f'MA{i}'] = df['Close'].rolling(window=i).mean()
 
-    # 2. 전문 캔들차트 구현 (Plotly)
+    # 2. 전문 캔들차트 구현
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.05)
     
-    # 캔들스틱
     fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='시세'), row=1, col=1)
     
-    # 이평선 (5, 20, 40, 60)
-    colors = ['orange', 'blue', 'green', 'red']
-    for i, ma in enumerate([5, 20, 40, 60]):
+    # 이평선
+    for ma in [5, 20, 40, 60]:
         fig.add_trace(go.Scatter(x=df.index, y=df[f'MA{ma}'], name=f'MA{ma}', line=dict(width=1.5)), row=1, col=1)
         
     # 거래량
