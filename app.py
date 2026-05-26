@@ -70,4 +70,35 @@ def main():
         st.warning("데이터를 불러올 수 없습니다. 종목을 다시 확인해주세요.")
 
 if __name__ == '__main__':
-    main()
+    main()# 1. RSI 계산 (AI 진단용)
+    delta = df['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / loss
+    df['RSI'] = 100 - (100 / (1 + rs))
+    
+    current_rsi = df['RSI'].iloc[-1]
+    
+    # 2. AI 5단계 진단 로직
+    st.subheader("🤖 AI 알고리즘 실시간 진단")
+    
+    # 등급별 설정
+    if current_rsi < 20:
+        signal, color = "1단계 (강력 매수)", "red"
+        desc = "과매도 구간입니다. 반등 가능성이 매우 높습니다."
+    elif current_rsi < 40:
+        signal, color = "2단계 (매수)", "orange"
+        desc = "저평가 구간입니다. 분할 매수를 고려하세요."
+    elif current_rsi < 60:
+        signal, color = "3단계 (관망)", "gray"
+        desc = "박스권 구간입니다. 추세를 지켜보세요."
+    elif current_rsi < 80:
+        signal, color = "blue" , "4단계 (매도)"
+        desc = "과열 구간입니다. 차익 실현을 고려하세요."
+    else:
+        signal, color = "5단계 (강력 매도)", "purple"
+        desc = "버블 구간입니다! 위험 관리가 필요합니다."
+
+    # 3. 화면 표시
+    st.markdown(f"### <span style='color:{color}'>{signal}</span>", unsafe_allow_html=True)
+    st.info(f"현재 RSI 지표: **{current_rsi:.2f}** | {desc}")
