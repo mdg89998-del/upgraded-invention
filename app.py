@@ -149,4 +149,68 @@ if 'selected_stock' in st.session_state:
     df = fdr.DataReader(code, '2022-01-01')
     
     # ... (지표 계산 및 차트 부분은 동일) ...
-    st.success(f"{target_name} 분석 완료")
+    st.success(f"{target_name} 분석 완료")import streamlit as st
+import pandas as pd
+import pandas_ta_classic as ta
+import FinanceDataReader as fdr
+import yfinance as yf
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from datetime import datetime, timedelta
+
+st.set_page_config(page_title="AI PRO ANALYZER", layout="wide")
+
+# 세션 상태 초기화
+if 'search_history' not in st.session_state: st.session_state.search_history = []
+if 'selected_stock' not in st.session_state: st.session_state.selected_stock = '삼성전자'
+
+# 1. 데이터 로드 (에러 방지용)
+@st.cache_data(ttl=3600)
+def get_stock_list():
+    try:
+        df = fdr.StockListing('KRX')
+        return df[['Code', 'Name']]
+    except:
+        return pd.DataFrame({'Code': ['005930'], 'Name': ['삼성전자']})
+
+stock_list = get_stock_list()
+
+# 2. 사이드바 구성
+with st.sidebar:
+    st.subheader("🔍 종목 찾기")
+    # 텍스트 입력창과 선택창을 분리하지 않고 직관적으로 수정
+    query = st.text_input("종목명 입력 (예: SK하이닉스)")
+    
+    # 검색어 포함 시 필터링 (없으면 전체 리스트)
+    if query:
+        search_list = stock_list[stock_list['Name'].str.contains(query, na=False)]['Name'].tolist()
+    else:
+        search_list = stock_list['Name'].tolist()
+        
+    selected_name = st.selectbox("검색 결과 선택", search_list)
+    
+    if st.button("분석 실행"):
+        st.session_state.selected_stock = selected_name
+        if selected_name not in st.session_state.search_history:
+            st.session_state.search_history.insert(0, selected_name)
+            if len(st.session_state.search_history) > 10: st.session_state.search_history.pop()
+
+# 3. 메인 화면 (시장 지표)
+st.title("🤖 AI 프로 자산 분석기")
+st.write(f"### 현재 선택: {st.session_state.selected_stock}")
+
+# 4. 분석 엔진
+target_code = stock_list[stock_list['Name'] == st.session_state.selected_stock]['Code'].values[0]
+df = fdr.DataReader(target_code, '2022-01-01')
+
+# 이동평균선 및 RSI 계산
+for i in [5, 20, 60, 120]: df[f'MA{i}'] = ta.ema(df['Close'], length=i)
+df['RSI'] = ta.rsi(df['Close'], length=14)
+
+# 5. 차트 (Plotly)
+fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
+fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='시세'), row=1, col=1)
+for i in [5, 20, 60, 120]: fig.add_trace(go.Scatter(x=df.index, y=df[f'MA{i}'], name=f'MA{i}'), row=1, col=1)
+fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='거래량'), row=2, col=1)
+fig.update_layout(height=500, margin=dict(l=0, r=0, t=30, b=0))
+st.plotly_chart(fig, use_container_width=True)
