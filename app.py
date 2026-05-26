@@ -3,36 +3,44 @@ import pandas as pd
 import FinanceDataReader as fdr
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import os
 
-# 1. 안정적인 데이터 로드 (실패 시 예외 처리)
+# 1. 안전한 데이터 로딩 (로컬 파일 캐싱 활용)
 @st.cache_data(ttl=86400)
 def get_stock_data():
-    try:
-        # 서버에서 데이터 가져오기 시도
-        df = fdr.StockListing('KRX')[['Code', 'Name']]
-    except:
-        # 서버 연결 실패 시 최소한의 기본 리스트 유지 (앱 멈춤 방지)
-        df = pd.DataFrame({'Code': ['005930', '000660', '035420', '005380', '068270'], 
-                           'Name': ['삼성전자', 'SK하이닉스', 'NAVER', '현대차', '셀트리온']})
+    csv_file = 'stock_list.csv'
+    # 로컬에 파일이 있으면 무조건 그것을 읽음 (서버 접속 횟수 최소화)
+    if os.path.exists(csv_file):
+        df = pd.read_csv(csv_file)
+    else:
+        try:
+            # 첫 실행 시에만 서버 접속 시도
+            df = fdr.StockListing('KRX')[['Code', 'Name']]
+            df.to_csv(csv_file, index=False)
+        except:
+            # 완전히 서버가 죽어있을 경우 대비한 기본 데이터
+            df = pd.DataFrame({'Code': ['005930', '000660', '035420', '005380'], 
+                               'Name': ['삼성전자', 'SK하이닉스', 'NAVER', '현대차']})
     return df
 
 def main():
     st.set_page_config(page_title="AI PRO ANALYZER", layout="wide")
-    
-    # 데이터 로드
     stock_df = get_stock_data()
 
-    # 2. 사이드바 검색 (검색어 필터링)
+    # 2. 사이드바 검색 (데이터프레임 필터링 방식 최적화)
     with st.sidebar:
         st.subheader("🔍 종목 찾기")
         query = st.text_input("종목명 입력")
         
-        # 검색 필터링 로직
+        # 검색 필터링
         filtered_df = stock_df[stock_df['Name'].str.contains(query, na=False)] if query else stock_df
-        selected_name = st.selectbox("검색 결과", filtered_df['Name'].tolist())
+        
+        # 안전한 선택 리스트 생성
+        options = filtered_df['Name'].tolist() if not filtered_df.empty else stock_df['Name'].tolist()
+        selected_name = st.selectbox("검색 결과", options)
         interval = st.radio("차트 주기", ["일봉", "주봉", "월봉"], horizontal=True)
 
-    # 3. 데이터 로드 및 분석
+    # 3. 데이터 로드 (코드 매핑)
     target_code = stock_df[stock_df['Name'] == selected_name]['Code'].values[0]
     
     try:
@@ -41,42 +49,35 @@ def main():
         elif interval == '월봉': df = df.resample('ME').agg({'Open':'first', 'High':'max', 'Low':'min', 'Close':'last', 'Volume':'sum'})
         df = df.dropna()
     except:
-        st.error("데이터를 가져올 수 없습니다. 서버 상태를 확인하세요.")
+        st.error("데이터 서버 접속 실패. 잠시 후 시도하세요.")
         return
 
-    # 지표 계산
+    # 4. 분석 (이평선 + RSI + 골든크로스)
     df['MA5'] = df['Close'].rolling(5).mean()
     df['MA20'] = df['Close'].rolling(20).mean()
     delta = df['Close'].diff()
     gain = delta.where(delta > 0, 0).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-    rsi = 100 - (100 / (1 + (gain / loss)))
-    val = rsi.iloc[-1]
+    val = (100 - (100 / (1 + (gain / loss)))).iloc[-1]
     
-    # 4. AI 복합 진단 (변수 안전하게 초기화)
     golden = (df['MA5'].iloc[-2] < df['MA20'].iloc[-2]) and (df['MA5'].iloc[-1] > df['MA20'].iloc[-1])
-    
-    signal, color, desc = "관망", "gray", "특별한 신호가 없습니다."
-    if golden and val < 70: signal, color, desc = "강력 매수", "green", "골든크로스 발생! 상승 추세입니다."
-    elif val > 75: signal, color, desc = "매도", "red", "과열 상태입니다. 차익 실현 고려하세요."
-    elif golden: signal, color, desc = "매수", "blue", "골든크로스 발생했으나 과열 주의하세요."
-    elif val < 30: signal, color, desc = "저점 매수", "orange", "과매도 구간 반등을 노리세요."
 
-    # 5. 결과 출력
+    # 5. UI 출력
     st.title(f"📈 {selected_name} ({interval})")
     
     curr, prev = df['Close'].iloc[-1], df['Close'].iloc[-2]
-    vol_curr, vol_prev = df['Volume'].iloc[-1], df['Volume'].iloc[-2]
-    
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("현재가", f"{int(curr):,}원", f"{int(curr-prev):,} ({(curr-prev)/prev*100:.2f}%)")
-    c2.metric("거래량", f"{int(vol_curr):,}", f"{((vol_curr-vol_prev)/vol_prev)*100:+.1f}% 전일비")
+    c2.metric("거래량", f"{int(df['Volume'].iloc[-1]):,}", f"{((df['Volume'].iloc[-1]-df['Volume'].iloc[-2])/df['Volume'].iloc[-2])*100:+.1f}% 전일비")
     c3.metric("고가", f"{int(df['High'].iloc[-1]):,}원")
     c4.metric("저가", f"{int(df['Low'].iloc[-1]):,}원")
     
-    st.subheader("🤖 AI 알고리즘 복합 진단")
-    st.markdown(f"### 🎯 시그널: <span style='color:{color}'>{signal}</span>", unsafe_allow_html=True)
-    st.info(f"분석: {desc} (RSI: {val:.1f})")
+    st.subheader("🤖 AI 알고리즘 진단")
+    if golden and val < 70: st.success("강력 매수: 골든크로스 발생 및 상승 추세")
+    elif val > 75: st.error("매도: 과열 구간입니다.")
+    elif golden: st.warning("매수: 골든크로스 발생!")
+    elif val < 30: st.info("저점 매수: 과매도 구간입니다.")
+    else: st.write("관망: 특별한 신호가 없습니다.")
 
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3])
     fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close']), row=1, col=1)
