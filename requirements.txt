@@ -1,6 +1,5 @@
 streamlit
 pandas
-pandas-ta-classic
-yfinance
-finance-datareader
+numpy
 plotly
+FinanceDataReader
