@@ -14,40 +14,70 @@ st.set_page_config(
 )
 
 # --------------------------------
-# 다크 테마 CSS
+# 다크 테마 (눈 편한 회색)
 # --------------------------------
 st.markdown("""
 <style>
-html, body, [class*="css"] {
-    background-color: #0E1117;
+.stApp {
+    background-color: #1E1E1E;
     color: white;
 }
 
 section[data-testid="stSidebar"] {
-    background-color: #111827;
+    background-color: #202123;
 }
 
 .stMetric {
-    background-color: #1F2937;
+    background: #2A2D35;
+    border-radius: 15px;
     padding: 15px;
-    border-radius: 12px;
+}
+
+div[data-baseweb="select"] > div {
+    background-color: #2A2D35 !important;
+}
+
+input {
+    background-color: #2A2D35 !important;
+    color: white !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
 # --------------------------------
-# 종목 데이터
+# 코스피 + 코스닥 종목 불러오기
 # --------------------------------
 @st.cache_data(ttl=86400)
 def get_stock_data():
     try:
-        df = fdr.StockListing("KRX")[["Code", "Name"]]
+        kospi = fdr.StockListing("KOSPI")[["Code", "Name"]]
+        kosdaq = fdr.StockListing("KOSDAQ")[["Code", "Name"]]
+
+        kospi["Market"] = "KOSPI"
+        kosdaq["Market"] = "KOSDAQ"
+
+        df = pd.concat(
+            [kospi, kosdaq],
+            ignore_index=True
+        )
+
         df["Code"] = df["Code"].astype(str)
+
+        df = df.drop_duplicates(
+            subset=["Code"]
+        )
+
+        df = df.sort_values(
+            by="Name"
+        ).reset_index(drop=True)
+
         return df
+
     except Exception:
         return pd.DataFrame({
             "Code": ["005930"],
-            "Name": ["삼성전자"]
+            "Name": ["삼성전자"],
+            "Market": ["KOSPI"]
         })
 
 # --------------------------------
@@ -56,14 +86,27 @@ def get_stock_data():
 def calculate_rsi(close, period=14):
     delta = close.diff()
 
-    gain = delta.where(delta > 0, 0)
-    loss = -delta.where(delta < 0, 0)
+    gain = delta.where(
+        delta > 0, 0
+    )
 
-    avg_gain = gain.rolling(period).mean()
-    avg_loss = loss.rolling(period).mean()
+    loss = -delta.where(
+        delta < 0, 0
+    )
+
+    avg_gain = gain.rolling(
+        period
+    ).mean()
+
+    avg_loss = loss.rolling(
+        period
+    ).mean()
 
     rs = avg_gain / avg_loss
-    rsi = 100 - (100 / (1 + rs))
+
+    rsi = 100 - (
+        100 / (1 + rs)
+    )
 
     return rsi
 
@@ -71,11 +114,23 @@ def calculate_rsi(close, period=14):
 # MACD 계산
 # --------------------------------
 def calculate_macd(close):
-    ema12 = close.ewm(span=12).mean()
-    ema26 = close.ewm(span=26).mean()
+    ema12 = close.ewm(
+        span=12,
+        adjust=False
+    ).mean()
+
+    ema26 = close.ewm(
+        span=26,
+        adjust=False
+    ).mean()
 
     macd = ema12 - ema26
-    signal = macd.ewm(span=9).mean()
+
+    signal = macd.ewm(
+        span=9,
+        adjust=False
+    ).mean()
+
     hist = macd - signal
 
     return macd, signal, hist
@@ -89,7 +144,7 @@ st.sidebar.title("🔍 종목 검색")
 
 query = st.sidebar.text_input(
     "종목명 또는 종목코드",
-    placeholder="예: 삼성, SK, 005930"
+    ""
 )
 
 if query:
@@ -108,16 +163,20 @@ if query:
 else:
     filtered_df = stock_df.copy()
 
-filtered_df = filtered_df.head(100)
+filtered_df = filtered_df.head(200)
 
 if filtered_df.empty:
-    st.warning("검색된 종목이 없습니다.")
+    st.sidebar.warning(
+        "검색 결과 없음"
+    )
     st.stop()
 
 filtered_df["display"] = (
     filtered_df["Name"]
     + " ("
     + filtered_df["Code"]
+    + " | "
+    + filtered_df["Market"]
     + ")"
 )
 
@@ -127,7 +186,8 @@ selected_display = st.sidebar.selectbox(
 )
 
 selected_row = filtered_df[
-    filtered_df["display"] == selected_display
+    filtered_df["display"]
+    == selected_display
 ].iloc[0]
 
 selected_name = selected_row["Name"]
@@ -138,8 +198,7 @@ target_code = selected_row["Code"]
 # --------------------------------
 interval = st.sidebar.radio(
     "차트 주기",
-    ["일봉", "주봉", "월봉"],
-    horizontal=True
+    ["일봉", "주봉", "월봉"]
 )
 
 # --------------------------------
@@ -152,7 +211,9 @@ try:
     )
 
     if interval == "주봉":
-        df = df.resample("W").agg({
+        df = df.resample(
+            "W"
+        ).agg({
             "Open": "first",
             "High": "max",
             "Low": "min",
@@ -161,7 +222,9 @@ try:
         })
 
     elif interval == "월봉":
-        df = df.resample("M").agg({
+        df = df.resample(
+            "M"
+        ).agg({
             "Open": "first",
             "High": "max",
             "Low": "min",
@@ -172,25 +235,29 @@ try:
     df.dropna(inplace=True)
 
 except Exception as e:
-    st.error(f"데이터 오류: {e}")
+    st.error(
+        f"데이터 오류: {e}"
+    )
     st.stop()
 
 # --------------------------------
-# 보조지표 계산
+# 지표 계산
 # --------------------------------
 df["MA5"] = df["Close"].rolling(5).mean()
 df["MA20"] = df["Close"].rolling(20).mean()
 df["MA60"] = df["Close"].rolling(60).mean()
 
-df["RSI"] = calculate_rsi(df["Close"])
+df["RSI"] = calculate_rsi(
+    df["Close"]
+)
 
-macd, signal_line, hist = calculate_macd(df["Close"])
+macd, signal_line, hist = calculate_macd(
+    df["Close"]
+)
 
 df["MACD"] = macd
 df["Signal"] = signal_line
-df["Hist"] = hist
-
-curr = df["Close"].iloc[-1]
+df["Hist"] = histcurr = df["Close"].iloc[-1]
 prev = df["Close"].iloc[-2]
 
 price_diff = (
@@ -207,9 +274,13 @@ vol_diff = (
 )
 
 rsi = df["RSI"].iloc[-1]
+
 if np.isnan(rsi):
     rsi = 50
 
+# --------------------------------
+# 상단 정보
+# --------------------------------
 st.title(f"📈 {selected_name}")
 
 c1, c2, c3, c4 = st.columns(4)
@@ -234,67 +305,49 @@ c3.metric(
 c4.metric(
     "종목코드",
     target_code
-)# --------------------------------
+)
+
+# --------------------------------
 # AI 진단
 # --------------------------------
 golden_cross = (
-    df["MA5"].iloc[-2] < df["MA20"].iloc[-2]
+    df["MA5"].iloc[-2]
+    < df["MA20"].iloc[-2]
     and
-    df["MA5"].iloc[-1] > df["MA20"].iloc[-1]
+    df["MA5"].iloc[-1]
+    > df["MA20"].iloc[-1]
 )
 
 dead_cross = (
-    df["MA5"].iloc[-2] > df["MA20"].iloc[-2]
+    df["MA5"].iloc[-2]
+    > df["MA20"].iloc[-2]
     and
-    df["MA5"].iloc[-1] < df["MA20"].iloc[-1]
+    df["MA5"].iloc[-1]
+    < df["MA20"].iloc[-1]
 )
 
 signal_text = "관망"
-signal_color = "#9CA3AF"
-desc = "특별한 신호가 없습니다."
+desc = "특별한 신호 없음"
 
 if golden_cross and rsi < 70:
     signal_text = "강력 매수"
-    signal_color = "#22C55E"
-    desc = "골든크로스 발생 + RSI 양호"
+    desc = "골든크로스 + RSI 양호"
 
 elif dead_cross:
     signal_text = "매도 주의"
-    signal_color = "#EF4444"
     desc = "데드크로스 발생"
 
 elif rsi < 30:
     signal_text = "저점 매수"
-    signal_color = "#F59E0B"
     desc = "과매도 구간"
 
 elif rsi > 75:
     signal_text = "과열"
-    signal_color = "#EF4444"
     desc = "단기 과열 가능성"
 
-st.markdown(
-    f"""
-    <div style='
-        background:#111827;
-        padding:20px;
-        border-radius:15px;
-        margin-top:10px;
-        margin-bottom:20px;
-    '>
-        <h2 style='margin:0;color:white'>
-        🎯 AI 진단:
-        <span style='color:{signal_color}'>
-        {signal_text}
-        </span>
-        </h2>
-
-        <p style='color:#D1D5DB;font-size:16px'>
-        {desc} | RSI: {rsi:.1f}
-        </p>
-    </div>
-    """,
-    unsafe_allow_html=True
+st.success(
+    f"🎯 AI 진단: {signal_text}\n\n"
+    f"{desc} | RSI: {rsi:.1f}"
 )
 
 # --------------------------------
@@ -302,8 +355,8 @@ st.markdown(
 # --------------------------------
 volume_colors = np.where(
     df["Close"] >= df["Open"],
-    "#EF4444",   # 상승 빨강
-    "#3B82F6"    # 하락 파랑
+    "#FF4B4B",
+    "#3B82F6"
 )
 
 hist_colors = np.where(
@@ -313,17 +366,17 @@ hist_colors = np.where(
 )
 
 # --------------------------------
-# 차트 생성
+# 차트
 # --------------------------------
 fig = make_subplots(
     rows=4,
     cols=1,
     shared_xaxes=True,
-    vertical_spacing=0.02,
+    vertical_spacing=0.03,
     row_heights=[0.55, 0.15, 0.15, 0.15]
 )
 
-# 캔들
+# 캔들 차트
 fig.add_trace(
     go.Candlestick(
         x=df.index,
@@ -331,9 +384,9 @@ fig.add_trace(
         high=df["High"],
         low=df["Low"],
         close=df["Close"],
-        increasing_line_color="#EF4444",
+        increasing_line_color="#FF4B4B",
         decreasing_line_color="#3B82F6",
-        increasing_fillcolor="#EF4444",
+        increasing_fillcolor="#FF4B4B",
         decreasing_fillcolor="#3B82F6",
         name="가격"
     ),
@@ -347,7 +400,10 @@ fig.add_trace(
         x=df.index,
         y=df["MA5"],
         name="MA5",
-        line=dict(color="#FACC15", width=1.5)
+        line=dict(
+            color="#FFD700",
+            width=1.5
+        )
     ),
     row=1,
     col=1
@@ -358,7 +414,10 @@ fig.add_trace(
         x=df.index,
         y=df["MA20"],
         name="MA20",
-        line=dict(color="#22C55E", width=1.5)
+        line=dict(
+            color="#00E676",
+            width=1.5
+        )
     ),
     row=1,
     col=1
@@ -369,7 +428,10 @@ fig.add_trace(
         x=df.index,
         y=df["MA60"],
         name="MA60",
-        line=dict(color="#A855F7", width=1.5)
+        line=dict(
+            color="#B388FF",
+            width=1.5
+        )
     ),
     row=1,
     col=1
@@ -392,7 +454,9 @@ fig.add_trace(
     go.Scatter(
         x=df.index,
         y=df["RSI"],
-        line=dict(color="#38BDF8"),
+        line=dict(
+            color="#00BFFF"
+        ),
         name="RSI"
     ),
     row=3,
@@ -420,7 +484,9 @@ fig.add_trace(
     go.Scatter(
         x=df.index,
         y=df["MACD"],
-        line=dict(color="#60A5FA"),
+        line=dict(
+            color="#60A5FA"
+        ),
         name="MACD"
     ),
     row=4,
@@ -431,7 +497,9 @@ fig.add_trace(
     go.Scatter(
         x=df.index,
         y=df["Signal"],
-        line=dict(color="#F97316"),
+        line=dict(
+            color="#F97316"
+        ),
         name="Signal"
     ),
     row=4,
@@ -455,34 +523,29 @@ fig.add_trace(
 fig.update_layout(
     template="plotly_dark",
     height=1100,
-    dragmode="zoom",
     hovermode="x unified",
+    dragmode="zoom",
     xaxis_rangeslider_visible=False,
-    paper_bgcolor="#0E1117",
-    plot_bgcolor="#0E1117",
-    font=dict(color="white"),
+    paper_bgcolor="#1E1E1E",
+    plot_bgcolor="#1E1E1E",
+    font=dict(
+        color="white"
+    ),
     legend=dict(
         orientation="h",
-        yanchor="bottom",
         y=1.02,
-        xanchor="right",
         x=1
     ),
     margin=dict(
-        l=20,
-        r=20,
+        l=10,
+        r=10,
         t=20,
         b=20
     )
 )
 
 fig.update_yaxes(
-    showgrid=True,
     gridcolor="rgba(255,255,255,0.08)"
-)
-
-fig.update_xaxes(
-    showgrid=False
 )
 
 st.plotly_chart(
