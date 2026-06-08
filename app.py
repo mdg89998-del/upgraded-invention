@@ -5,10 +5,15 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
 
+# 캐시 데이터를 불러오는 함수 (불필요한 에러 방지를 위해 예외처리 강화)
 @st.cache_data(ttl=86400)
 def get_stock_data():
     try:
+        # KRX 전체 종목을 가져옵니다.
         df = fdr.StockListing('KRX')[['Code', 'Name']]
+        # 데이터가 비어있지 않은지 확인
+        if df.empty:
+            raise ValueError("데이터 없음")
     except:
         df = pd.DataFrame({'Code': ['005930'], 'Name': ['삼성전자']})
     return df
@@ -18,15 +23,22 @@ def main():
     stock_df = get_stock_data()
 
     st.sidebar.subheader("🔍 종목 검색")
-    query = st.sidebar.text_input("종목명 입력")
+    # 1. 검색어 입력
+    query = st.sidebar.text_input("종목명 입력", "")
     
-    if not stock_df.empty:
-        filtered_df = stock_df[stock_df['Name'].str.contains(query, na=False)] if query else stock_df
+    # 2. 검색어에 따른 데이터 필터링 로직 수정 (대소문자 무시, 포함 검색)
+    if query:
+        filtered_df = stock_df[stock_df['Name'].str.contains(query, na=False, case=False)]
+    else:
+        filtered_df = stock_df
         
+    if not stock_df.empty:
         if not filtered_df.empty:
+            # 3. 셀렉트박스 표시
             selected_name = st.sidebar.selectbox("종목 선택", filtered_df['Name'].tolist())
             interval = st.sidebar.radio("차트 주기", ["일봉", "주봉", "월봉"], horizontal=True)
             
+            # 선택된 종목 코드 찾기
             target_code = stock_df.loc[stock_df['Name'] == selected_name, 'Code'].iloc[0]
             
             try:
@@ -47,7 +59,7 @@ def main():
             rsi_val = (100 - (100 / (1 + (gain / loss)))).iloc[-1]
             rsi = rsi_val if not np.isnan(rsi_val) else 50.0
 
-            # UI 출력 (현재가, 거래량 등)
+            # UI 출력
             curr = df['Close'].iloc[-1]
             prev = df['Close'].iloc[-2]
             vol_curr = df['Volume'].iloc[-1]
